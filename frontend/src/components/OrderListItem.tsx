@@ -20,11 +20,13 @@ interface OrderListItemProps {
   onAmountChange: (productId: string, newAmount: number) => void
   onDelete: (productId: string) => void
   onSubmitOrder?: (orderId: string) => void
+  onContinuePayment?: (orderId: string) => void
   status: string;
   isLast: boolean;
+  locked?: boolean;
 }
 
-const OrderListItem: React.FC<OrderListItemProps> = ({ product, amount, price, orderId, onAmountChange, onDelete, onSubmitOrder, status, isLast }) => {
+const OrderListItem: React.FC<OrderListItemProps> = ({ product, amount, price, orderId, onAmountChange, onDelete, onSubmitOrder, onContinuePayment, status, isLast, locked }) => {
   const [currentAmount, setCurrentAmount] = useState(amount)
 
   const [deleteProduct] = useMutation(DELETE_PRODUCT_FROM_ORDER, {
@@ -96,7 +98,7 @@ const OrderListItem: React.FC<OrderListItemProps> = ({ product, amount, price, o
                   variant="outline"
                   size="icon"
                   onClick={handleDecrement}
-                  disabled={currentAmount <= 1}
+                  disabled={locked || currentAmount <= 1}
                   className="h-9 w-9 transition-all duration-200 hover:bg-red-500 hover:text-white hover:scale-110 disabled:opacity-50 border-gray-300"
                 >
                   <Minus className="h-4 w-4" />
@@ -107,13 +109,14 @@ const OrderListItem: React.FC<OrderListItemProps> = ({ product, amount, price, o
                   onChange={handleInputChange}
                   min={1}
                   max={10}
+                  disabled={locked}
                   className="w-20 text-center h-9"
                 />
                 <Button
                   variant="outline"
                   size="icon"
                   onClick={handleIncrement}
-                  disabled={currentAmount >= 10}
+                  disabled={locked || currentAmount >= 10}
                   className="h-9 w-9 transition-all duration-200 hover:bg-green-500 hover:text-white hover:scale-110 disabled:opacity-50 border-gray-300"
                 >
                   <Plus className="h-4 w-4" />
@@ -122,7 +125,8 @@ const OrderListItem: React.FC<OrderListItemProps> = ({ product, amount, price, o
                   variant="outline"
                   size="icon"
                   onClick={handleDelete}
-                  className="h-9 w-9 transition-all duration-200 text-red-600 hover:bg-red-500 hover:text-white hover:scale-110 border-gray-300"
+                  disabled={locked}
+                  className="h-9 w-9 transition-all duration-200 text-red-600 hover:bg-red-500 hover:text-white hover:scale-110 border-gray-300 disabled:opacity-50"
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -137,7 +141,17 @@ const OrderListItem: React.FC<OrderListItemProps> = ({ product, amount, price, o
             onClick={() => onSubmitOrder(orderId)}
             className="min-w-[120px] h-10 bg-blue-600 hover:bg-blue-700 text-white font-medium"
           >
-            Submit Order
+            Checkout
+          </Button>
+        </div>
+      )}
+      {isLast && status === 'submited' && onContinuePayment && (
+        <div className="mt-6 flex justify-end">
+          <Button
+            onClick={() => onContinuePayment(orderId)}
+            className="min-w-[160px] h-10 bg-blue-600 hover:bg-blue-700 text-white font-medium"
+          >
+            Continue payment
           </Button>
         </div>
       )}

@@ -1,5 +1,16 @@
 import { UserRecord, AuthRecord, OrderRecord, ProductRecord, PromoEntity } from '../types/entities';
-import { IUserRepository, IAuthRepository, IOrderRepository, IProductRepository, IPromoRepository } from './interfaces';
+import { PaymentIntentRecord, IdempotencyRecord, ExternalRef, PaymentProviderId, externalRefKey } from '../types/payment';
+import {
+  IUserRepository,
+  IAuthRepository,
+  IOrderRepository,
+  IProductRepository,
+  IPromoRepository,
+  IPaymentIntentRepository,
+  IWebhookEventRepository,
+  IIdempotencyRepository,
+  Resettable,
+} from './interfaces';
 
 export class InMemoryUserRepository implements IUserRepository {
   private users: UserRecord[] = [
@@ -88,7 +99,7 @@ export class InMemoryProductRepository implements IProductRepository {
   }
 }
 
-export class InMemoryOrderRepository implements IOrderRepository {
+export class InMemoryOrderRepository implements IOrderRepository, Resettable {
   private orders: OrderRecord[] = [
     {
       orderId: "order-1",
@@ -182,5 +193,90 @@ export class InMemoryPromoRepository implements IPromoRepository {
 
   findAll(): PromoEntity[] {
     return [...this.promos];
+  }
+}
+
+export class InMemoryPaymentIntentRepository implements IPaymentIntentRepository, Resettable {
+  private intents: PaymentIntentRecord[] = [];
+  // Reverse lookup is the fallback path (metadata-carried intentId is primary),
+  // but a provider's webhook must still be resolvable by its own id alone.
+  private byExternalRef = new Map<string, string>();
+
+  reset(): void {
+    this.intents = [];
+    this.byExternalRef.clear();
+  }
+
+  findById(id: string): PaymentIntentRecord | undefined {
+    return this.intents.find(intent => intent.id === id);
+  }
+
+  findByOrderId(orderId: string): PaymentIntentRecord[] {
+    return this.intents.filter(intent => intent.orderId === orderId);
+  }
+
+  findByExternalRef(ref: ExternalRef): PaymentIntentRecord | undefined {
+    const id = this.byExternalRef.get(externalRefKey(ref));
+    return id ? this.findById(id) : undefined;
+  }
+
+  create(intent: PaymentIntentRecord): void {
+    this.intents.push(intent);
+    if (intent.externalRef) {
+      this.byExternalRef.set(externalRefKey(intent.externalRef), intent.id);
+    }
+  }
+
+  update(intent: PaymentIntentRecord): void {
+    const index = this.intents.findIndex(i => i.id === intent.id);
+    if (index !== -1) {
+      this.intents[index] = intent;
+    }
+    if (intent.externalRef) {
+      this.byExternalRef.set(externalRefKey(intent.externalRef), intent.id);
+    }
+  }
+}
+
+export class InMemoryWebhookEventRepository implements IWebhookEventRepository, Resettable {
+  private processed = new Set<string>();
+
+  reset(): void {
+    this.processed.clear();
+  }
+
+  wasProcessed(provider: PaymentProviderId, eventId: string): boolean {
+    return this.processed.has(`${provider}:${eventId}`);
+  }
+
+  markProcessed(provider: PaymentProviderId, eventId: string): void {
+    this.processed.add(`${provider}:${eventId}`);
+  }
+}
+
+export class InMemoryIdempotencyRepository implements IIdempotencyRepository, Resettable {
+  private records = new Map<string, IdempotencyRecord>();
+
+  reset(): void {
+    this.records.clear();
+  }
+
+  find(scopedKey: string): IdempotencyRecord | undefined {
+    return this.records.get(scopedKey);
+  }
+
+  reserve(record: IdempotencyRecord): 'reserved' | 'exists' {
+    if (this.records.has(record.scopedKey)) return 'exists';
+    this.records.set(record.scopedKey, record);
+    return 'reserved';
+  }
+
+  complete(scopedKey: string, intentId: string): void {
+    const record = this.records.get(scopedKey);
+    if (record) this.records.set(scopedKey, { ...record, intentId });
+  }
+
+  release(scopedKey: string): void {
+    this.records.delete(scopedKey);
   }
 }

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import cors from 'cors';
-import { InMemoryOrderRepository } from '../repositories/implementations';
+import { Resettable } from '../repositories/interfaces';
 
-export function createResetRoutes(repositories: InMemoryOrderRepository[]): Router {
+export function createResetRoutes(repositories: Resettable[]): Router {
   const router = Router();
 
   router.get('/', cors({ origin: '*' }), (_req, res) => {

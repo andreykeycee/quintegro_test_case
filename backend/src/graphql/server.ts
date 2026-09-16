@@ -4,9 +4,15 @@ import { createResolvers } from './resolvers';
 import { OrderService } from '../services/orderService';
 import { AuthService } from '../services/authService';
 import { PromoService } from '../services/promoService';
+import { PaymentService } from '../services/paymentService';
 
-export const createApolloServer = (orderService: OrderService, authService: AuthService, promoService: PromoService) => {
-  const resolvers = createResolvers(orderService, authService, promoService);
+export const createApolloServer = (
+  orderService: OrderService,
+  authService: AuthService,
+  promoService: PromoService,
+  paymentService: PaymentService
+) => {
+  const resolvers = createResolvers(orderService, authService, promoService, paymentService);
 
   return new ApolloServer({
     typeDefs,
@@ -16,10 +22,10 @@ export const createApolloServer = (orderService: OrderService, authService: Auth
       console.error('GraphQL Error:', error);
       return {
         message: error.message,
-        path: error.path
+        path: error.path,
+        extensions: error.extensions
       };
     },
-    introspection: true,
-    playground: true
+    introspection: true
   });
 };

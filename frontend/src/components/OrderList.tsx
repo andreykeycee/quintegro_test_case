@@ -1,10 +1,24 @@
 import React, { useState } from 'react'
+import { useHistory } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import { GET_ORDERS } from '../graphql/queries'
 import { SUBMIT_ORDER, DELETE_PRODUCT_FROM_ORDER } from '../graphql/mutations'
 import OrderListItem from './OrderListItem'
 import OrderSum from './OrderSum'
+import { Badge } from '@/components/ui/badge'
 import { Loader2 } from 'lucide-react'
+
+const STATUS_LABEL: Record<string, string> = {
+  created: 'Cart',
+  submited: 'Checkout in progress',
+  finished: 'Paid',
+}
+
+const STATUS_CLASS: Record<string, string> = {
+  created: 'border-transparent bg-gray-100 text-gray-700',
+  submited: 'border-transparent bg-blue-100 text-blue-700',
+  finished: 'border-transparent bg-green-100 text-green-700',
+}
 
 interface Product {
   id: string
@@ -26,6 +40,7 @@ interface Order {
 }
 
 const OrderList: React.FC = () => {
+  const history = useHistory()
   const [orders, setOrders] = useState<Order[]>([])
 
   const { loading, error, refetch } = useQuery(GET_ORDERS, {
@@ -89,9 +104,14 @@ const OrderList: React.FC = () => {
       await submitOrder({
         variables: { orderId }
       })
+      history.push(`/checkout/${orderId}`)
     } catch (error) {
       console.error('Error submitting order:', error)
     }
+  }
+
+  const handleContinuePayment = (orderId: string) => {
+    history.push(`/checkout/${orderId}`)
   }
 
   if (loading) {
@@ -150,8 +170,11 @@ const OrderList: React.FC = () => {
       
       {orders.map((order) => (
         <div key={order.orderId} className="mb-8 bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-          <h2 className="text-xl font-semibold mb-6 text-gray-900 border-b border-gray-200 pb-3">
-            Order #{order.orderId} - {order.status}
+          <h2 className="text-xl font-semibold mb-6 text-gray-900 border-b border-gray-200 pb-3 flex items-center gap-3">
+            Order #{order.orderId}
+            <Badge className={STATUS_CLASS[order.status]}>
+              {STATUS_LABEL[order.status] ?? order.status}
+            </Badge>
           </h2>
           
           {order.products.map((item, index) => (
@@ -164,8 +187,10 @@ const OrderList: React.FC = () => {
               onAmountChange={handleAmountChange}
               onDelete={handleDelete}
               onSubmitOrder={handleSubmitOrder}
+              onContinuePayment={handleContinuePayment}
               status={order.status}
               isLast={index === order.products.length -1}
+              locked={order.status !== 'created'}
             />
           ))}
           <OrderSum orderId={order.orderId} products={order.products} />

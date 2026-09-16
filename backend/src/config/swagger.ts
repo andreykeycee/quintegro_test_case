@@ -1,3 +1,4 @@
+// @ts-ignore - no @types/swagger-jsdoc published for this version
 import swaggerJsdoc from 'swagger-jsdoc';
 
 const options: swaggerJsdoc.Options = {
@@ -211,9 +212,58 @@ const options: swaggerJsdoc.Options = {
             },
             promo: {
               $ref: '#/components/schemas/PromoEntity'
+            },
+            expiresAt: {
+              type: 'number',
+              nullable: true,
+              description: 'Epoch ms deadline for the current/last checkout window, if any'
+            },
+            expiresInMs: {
+              type: 'number',
+              nullable: true,
+              description: 'Server-computed remaining ms, frozen while a payment is in flight'
+            },
+            paymentPaused: {
+              type: 'boolean',
+              description: 'True while a payment intent is in flight for this order'
             }
           },
           required: ['orderId', 'status', 'products']
+        },
+        PaymentIntent: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'string',
+              description: 'Unique payment intent identifier',
+              example: 'pi_a1b2c3d4'
+            },
+            orderId: {
+              type: 'string',
+              example: 'order-2'
+            },
+            provider: {
+              type: 'string',
+              enum: ['local_bank', 'paypal']
+            },
+            status: {
+              type: 'string',
+              enum: ['processing', 'requires_action', 'succeeded', 'failed', 'canceled', 'expired']
+            },
+            amount: {
+              type: 'number',
+              description: 'Price locked at checkout submission, never recomputed'
+            },
+            failureCode: {
+              type: 'string',
+              nullable: true
+            },
+            failureMessage: {
+              type: 'string',
+              nullable: true
+            }
+          },
+          required: ['id', 'orderId', 'provider', 'status', 'amount']
         },
         PromoEntity: {
           type: 'object',

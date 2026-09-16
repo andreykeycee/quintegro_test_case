@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { RequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import swaggerUi from 'swagger-ui-express';
@@ -10,20 +10,29 @@ import { createAuthRoutes } from './routes/authRoutes';
 import { createOrderRoutes } from './routes/orderRoutes';
 import { createPromoRoutes } from './routes/promoRoutes';
 import { createResetRoutes } from './routes/resetRoutes';
+import { createPaymentRoutes } from './routes/paymentRoutes';
 import { AuthController } from './controllers/authController';
 import { OrderController } from './controllers/orderController';
 import { PromoController } from './controllers/promoController';
-import { AuthService } from './services/authService';
-import { OrderService } from './services/orderService';
-import { PromoService } from './services/promoService';
-import { InMemoryUserRepository, InMemoryAuthRepository, InMemoryOrderRepository, InMemoryProductRepository, InMemoryPromoRepository } from './repositories/implementations';
+import { PaymentWebhookController } from './controllers/paymentWebhookController';
+import { createContainer, AppContainer } from './container';
+
+// The mock webhook and PayPal-approval endpoints aren't user-facing: random
+// chaos-test delays/500s there just make manual testing ambiguous. Every
+// other route (including createPaymentIntent) stays under the chaos
+// middleware on purpose - that's what idempotency keys are for.
+const PAYMENT_INTERNAL_PREFIXES = ['/api/payments/webhook', '/api/payments/mock'];
+
+const skipFor = (prefixes: string[], middleware: RequestHandler): RequestHandler =>
+  (req, res, next) => (prefixes.some(p => req.path.startsWith(p)) ? next() : middleware(req, res, next));
 
 export class App {
   public app: express.Application;
-  private orderRepositories: InMemoryOrderRepository[] = [];
+  private container: AppContainer;
 
   constructor() {
     this.app = express();
+    this.container = createContainer();
     this.initializeMiddlewares();
     this.initializeRoutes();
     this.initializeSwagger();
@@ -33,43 +42,37 @@ export class App {
   private initializeMiddlewares(): void {
     this.app.use(helmet({ contentSecurityPolicy: (process.env.NODE_ENV === 'production') ? undefined : false }));
     this.app.use(cors());
-    this.app.use(express.json());
+    this.app.use(express.json({
+      // Captures the exact bytes for HMAC verification, without reordering middleware.
+      verify: (req, _res, buf) => { (req as any).rawBody = buf.toString('utf8'); }
+    }));
     this.app.use(express.urlencoded({ extended: true }));
-    
+
     // Add delay to all API requests
-    this.app.use(delayMiddleware(1500));
-    
-    // Add error test middleware (returns 500 on every 3rd request)
-    this.app.use(errorTestMiddleware);
-    
+    this.app.use(skipFor(PAYMENT_INTERNAL_PREFIXES, delayMiddleware(1500)));
+
+    // Add error test middleware (returns 500 on every 5th request)
+    this.app.use(skipFor(PAYMENT_INTERNAL_PREFIXES, errorTestMiddleware));
+
     // Serve static files for product images
     this.app.use('/productImg', express.static('public/productImg'));
   }
 
   private initializeRoutes(): void {
-    // Initialize repositories
-    const userRepository = new InMemoryUserRepository();
-    const authRepository = new InMemoryAuthRepository();
-    const orderRepository = new InMemoryOrderRepository();
-    const productRepository = new InMemoryProductRepository();
-    const promoRepository = new InMemoryPromoRepository();
-    this.orderRepositories.push(orderRepository);
-
-    // Initialize services
-    const authService = new AuthService(authRepository, userRepository);
-    const orderService = new OrderService(orderRepository, productRepository, promoRepository);
-    const promoService = new PromoService(promoRepository);
+    const { authService, orderService, promoService, paymentService, providerRegistry, mockPayPalProvider } = this.container;
 
     // Initialize controllers
     const authController = new AuthController(authService);
     const orderController = new OrderController(orderService, authService);
     const promoController = new PromoController(promoService);
+    const paymentWebhookController = new PaymentWebhookController(paymentService, providerRegistry, mockPayPalProvider);
 
     // Setup routes
     this.app.use('/api', createAuthRoutes(authController));
     this.app.use('/api/order', createOrderRoutes(orderController));
     this.app.use('/api/promo', createPromoRoutes(promoController));
-    this.app.use('/reset/orders', createResetRoutes(this.orderRepositories));
+    this.app.use('/api/payments', createPaymentRoutes(paymentWebhookController));
+    this.app.use('/reset/orders', createResetRoutes(this.container.resettables));
 
     // Health check endpoint
     this.app.get('/health', (req, res) => {
@@ -86,7 +89,8 @@ export class App {
           health: '/health',
           login: '/api/login',
           orders: '/api/order',
-          promos: '/api/promo'
+          promos: '/api/promo',
+          payments: '/api/payments'
         }
       });
     });
@@ -97,26 +101,18 @@ export class App {
   }
 
   private async initializeGraphQL(): Promise<void> {
-    // Initialize repositories
-    const userRepository = new InMemoryUserRepository();
-    const authRepository = new InMemoryAuthRepository();
-    const orderRepository = new InMemoryOrderRepository();
-    const productRepository = new InMemoryProductRepository();
-    const promoRepository = new InMemoryPromoRepository();
-    this.orderRepositories.push(orderRepository);
-
-    // Initialize services
-    const authService = new AuthService(authRepository, userRepository);
-    const orderService = new OrderService(orderRepository, productRepository, promoRepository);
-    const promoService = new PromoService(promoRepository);
+    const { orderService, authService, promoService, paymentService } = this.container;
 
     // Create Apollo Server
-    const apolloServer = createApolloServer(orderService, authService, promoService);
+    const apolloServer = createApolloServer(orderService, authService, promoService, paymentService);
     await apolloServer.start();
 
     // Apply Apollo Server middleware
-    apolloServer.applyMiddleware({ 
-      app: this.app, 
+    // Cast: apollo-server-express bundles its own (older) @types/express,
+    // which conflicts structurally with the app's own - pre-existing
+    // dependency mismatch, not a real type error.
+    apolloServer.applyMiddleware({
+      app: this.app as any,
       path: '/graphql',
       cors: false // We're already using CORS middleware
     });

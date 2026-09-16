@@ -67,3 +67,60 @@ export const GET_PROMO = gql`
     }
   }
 `;
+
+// Query for the checkout page - order plus its checkout window and payment intent history
+export const GET_CHECKOUT_ORDER = gql`
+  query GetCheckoutOrder($orderId: ID!) {
+    order(orderId: $orderId) {
+      orderId
+      status
+      products {
+        product {
+          id
+          title
+          description
+          image
+        }
+        amount
+        price
+      }
+      promo {
+        id
+        discount
+        dueDate
+      }
+      expiresAt
+      expiresInMs
+      paymentPaused
+      paymentIntent {
+        id
+        orderId
+        provider
+        status
+        amount
+        failureCode
+        failureMessage
+        details {
+          ... on CardDetails {
+            last4
+            brand
+            expMonth
+            expYear
+            holderName
+          }
+          ... on PayPalDetails {
+            payerEmail
+            payerId
+            approvalUrl
+          }
+        }
+      }
+      paymentIntents {
+        id
+        provider
+        status
+        failureCode
+      }
+    }
+  }
+`;

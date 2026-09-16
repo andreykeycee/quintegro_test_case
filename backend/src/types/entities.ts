@@ -36,6 +36,9 @@ export interface OrderRecord {
     price: number;
   }>;
   promo?: PromoEntity;
+  checkoutExpiresAt?: number;  // epoch ms deadline for the current/last checkout window
+  checkoutAmount?: number;     // price lock snapshotted at submit, copied onto every intent
+  checkoutPausedAt?: number;   // set while a payment is in flight; freezes the countdown
 }
 
 export interface OrderDTO {
@@ -47,6 +50,9 @@ export interface OrderDTO {
     price: number;
   }>;
   promo?: PromoEntity;
+  expiresAt?: number;
+  expiresInMs?: number;
+  paymentPaused?: boolean;
 }
 
 export interface PromoEntity {

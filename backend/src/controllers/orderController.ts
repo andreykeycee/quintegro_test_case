@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { OrderService } from '../services/orderService';
 import { AuthService } from '../services/authService';
+import { AppError } from '../types/errors';
 
 interface ProductItem {
   id: string;
@@ -128,6 +129,9 @@ export class OrderController {
 
       return res.status(200).json(updatedOrder);
     } catch (error) {
+      if (error instanceof AppError) {
+        return res.status(409).json({ error: error.message, code: error.code });
+      }
       console.error('Delete product from order error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
